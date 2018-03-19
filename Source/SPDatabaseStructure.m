@@ -30,14 +30,13 @@
 
 #import "SPDatabaseStructure.h"
 #import "SPDatabaseDocument.h"
-#import "SPConnectionDelegate.h"
 #import "SPTablesList.h"
 #import "RegexKitLite.h"
 #import "SPThreadAdditions.h"
 
 #import <pthread.h>
 
-@interface SPDatabaseStructure (Private_API)
+@interface SPDatabaseStructure ()
 
 - (void)_destroy:(NSNotification *)notification;
 
@@ -259,6 +258,7 @@
 		goto cleanup_thread_and_pool;
 	}
 
+#if 0
 	// For future usage - currently unused
 	// If the affected item name and type - for example, table type and table name - were supplied, extract it.
 	NSString *affectedItem = nil;
@@ -270,6 +270,7 @@
 		else
 			affectedItem = nil;
 	}
+#endif
 
 	// Delete all stored data for the database to be updated, leaving the structure key
 	[queriedStructure removeObjectForKey:db_id];
@@ -470,12 +471,8 @@ cleanup_thread_and_pool:
 	[super dealloc];
 }
 
-@end
-
 #pragma mark -
 #pragma mark Private API
-
-@implementation SPDatabaseStructure (Private_API)
 
 /**
  * Ensure that processing is completed.

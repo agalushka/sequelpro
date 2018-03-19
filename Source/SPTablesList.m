@@ -33,7 +33,6 @@
 #import "SPDatabaseDocument.h"
 #import "SPTableStructure.h"
 #import "SPDatabaseStructure.h"
-#import "SPDatabaseViewController.h"
 #import "SPTableContent.h"
 #import "SPTableData.h"
 #import "SPTableInfo.h"
@@ -52,7 +51,6 @@
 #import "SPThreadAdditions.h"
 #import "SPFunctions.h"
 #import "SPCharsetCollationHelper.h"
-#import "SPWindowManagement.h"
 
 #import <SPMySQL/SPMySQL.h>
 
@@ -316,7 +314,10 @@ static NSString *SPDuplicateTable = @"SPDuplicateTable";
 
 	// Set the filter placeholder text
 	if ([tableDocumentInstance database]) {
-		[[[listFilterField cell] onMainThread] setPlaceholderString:NSLocalizedString(@"Filter", @"filter label")];
+		SPMainQSync(^{
+			// -cell is a UI call according to Xcode 9.2 (and -setPlaceholderString: is too, obviously)
+			[[listFilterField cell] setPlaceholderString:NSLocalizedString(@"Filter", @"filter label")];
+		});
 	}
 #endif
 

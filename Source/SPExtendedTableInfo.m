@@ -34,7 +34,6 @@
 #import "RegexKitLite.h"
 #import "SPDatabaseData.h"
 #import "SPDatabaseDocument.h"
-#import "SPDatabaseViewController.h"
 #import "SPTablesList.h"
 #import "SPAlertSheets.h"
 #import "SPTableStructure.h"
@@ -437,6 +436,8 @@ static NSString *SPMySQLCommentField          = @"Comment";
 
 /**
  * Returns a dictionary describing the information of the table to be used for printing purposes.
+ *
+ * MUST BE CALLED ON THE UI THREAD!
  */
 - (NSDictionary *)tableInformationForPrinting
 {
