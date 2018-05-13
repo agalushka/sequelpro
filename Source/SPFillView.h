@@ -1,9 +1,9 @@
 //
-//  SPMySQLKeepAliveTimer.h
-//  SPMySQLFramework
+//  SPFillView.h
+//  sequel-pro
 //
-//  Created by Rowan Beentje (rowan.beent.je) on March 5, 2012
-//  Copyright (c) 2012 Rowan Beentje. All rights reserved.
+//  Created by Max Lohrmann on 09.05.18.
+//  Copyright (c) 2018 Max Lohrmann. All rights reserved.
 //
 //  Permission is hereby granted, free of charge, to any person
 //  obtaining a copy of this software and associated documentation
@@ -28,18 +28,20 @@
 //
 //  More info at <https://github.com/sequelpro/sequelpro>
 
-
-@interface SPMySQLKeepAliveTimer : NSObject {
-	id timerTarget;
-	SEL timerSelector;
-	NSTimeInterval timerRepeatInterval;
-
-	NSTimer *wrappedTimer;
+/**
+ * SPFillView is a very simple NSView that will
+ * fill its whole view rect with a solid color.
+ * The color can be set in Interface Builder.
+ */
+@interface SPFillView : NSView
+{
+	NSColor *currentColor;
 }
 
-- (instancetype)initWithInterval:(NSTimeInterval)anInterval target:(id)aTarget selector:(SEL)aSelector NS_DESIGNATED_INITIALIZER;
-- (instancetype)init NS_UNAVAILABLE;
-
-- (void)invalidate;
+/**
+ * This method is invoked when unarchiving the View from the xib.
+ * The value is configured in IB under "User Defined Runtime Attributes"
+ */
+- (void)setSystemColorOfName:(NSString *)name;
 
 @end

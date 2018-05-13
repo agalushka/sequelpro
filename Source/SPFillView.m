@@ -1,9 +1,9 @@
 //
-//  SPMySQLKeepAliveTimer.h
-//  SPMySQLFramework
+//  SPFillView.m
+//  sequel-pro
 //
-//  Created by Rowan Beentje (rowan.beent.je) on March 5, 2012
-//  Copyright (c) 2012 Rowan Beentje. All rights reserved.
+//  Created by Max Lohrmann on 09.05.18.
+//  Copyright (c) 2018 Max Lohrmann. All rights reserved.
 //
 //  Permission is hereby granted, free of charge, to any person
 //  obtaining a copy of this software and associated documentation
@@ -28,18 +28,34 @@
 //
 //  More info at <https://github.com/sequelpro/sequelpro>
 
+#import "SPFillView.h"
 
-@interface SPMySQLKeepAliveTimer : NSObject {
-	id timerTarget;
-	SEL timerSelector;
-	NSTimeInterval timerRepeatInterval;
+@implementation SPFillView
 
-	NSTimer *wrappedTimer;
+- (void)setSystemColorOfName:(NSString *)name
+{
+	//TODO: xibs after 10.6 support storing colors as user defined attributes so we don't need the detour via strings anymore
+	NSColorList *scl = [NSColorList colorListNamed:@"System"];
+	NSColor *color = [scl colorWithKey:name];
+	if(color) {
+		[color retain];
+		[currentColor release];
+		currentColor = color;
+		[self setNeedsDisplay:YES];
+	}
 }
 
-- (instancetype)initWithInterval:(NSTimeInterval)anInterval target:(id)aTarget selector:(SEL)aSelector NS_DESIGNATED_INITIALIZER;
-- (instancetype)init NS_UNAVAILABLE;
+- (void)drawRect:(NSRect)dirtyRect {
+	if(currentColor) {
+		[currentColor set];
+		NSRectFill(dirtyRect);
+	}
+}
 
-- (void)invalidate;
+- (void)dealloc
+{
+	[currentColor release];
+	[super dealloc];
+}
 
 @end
