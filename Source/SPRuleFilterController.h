@@ -1,5 +1,5 @@
 //
-//  SPTableContentFilterController.h
+//  SPRuleFilterController.h
 //  sequel-pro
 //
 //  Created by Max Lohrmann on 04.05.18.
@@ -33,9 +33,9 @@
 @class SPTablesList;
 @class SPContentFilterManager;
 
-NSString * const SPTableContentFilterHeightChangedNotification;
+NSString * const SPRuleFilterHeightChangedNotification;
 
-@interface SPTableContentFilterController : NSObject {
+@interface SPRuleFilterController : NSObject {
 	IBOutlet NSRuleEditor *filterRuleEditor;
 	IBOutlet SPTableData *tableDataInstance;
 	IBOutlet SPDatabaseDocument *tableDocumentInstance;
@@ -47,7 +47,7 @@ NSString * const SPTableContentFilterHeightChangedNotification;
 	NSMutableDictionary *contentFilters;
 	NSMutableDictionary *numberOfDefaultFilters;
 
-	NSMutableArray *model;
+	id _modelContainer; // private class
 
 	SPContentFilterManager *contentFilterManager;
 
@@ -57,6 +57,8 @@ NSString * const SPTableContentFilterHeightChangedNotification;
 	SEL action;
 
 	BOOL enabled;
+	
+	NSUInteger opNodeCacheVersion;
 }
 
 /**

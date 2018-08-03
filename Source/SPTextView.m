@@ -50,6 +50,7 @@
 #import "SPCopyTable.h"
 #import "SPEditorTokens.h"
 #import "SPSyntaxParser.h"
+#import "SPHelpViewerClient.h"
 
 #import <SPMySQL/SPMySQL.h>
 
@@ -516,24 +517,24 @@ retry:
 					NSDictionary *theTable = [[dbs objectForKey:db] objectForKey:table];
 					NSString *tablepath = [table substringFromIndex:[table rangeOfString:SPUniqueSchemaDelimiter].location];
 					NSArray *allFields = [theTable allKeys];
-					NSInteger structtype = [[theTable objectForKey:@"  struct_type  "] intValue];
+					SPTableType structtype = (SPTableType)[[theTable objectForKey:@"  struct_type  "] intValue];
 					BOOL breakFlag = NO;
 					if(!aTableNameExists)
 						switch(structtype) {
-							case 0:
-							[possibleCompletions addObject:[NSDictionary dictionaryWithObjectsAndKeys:[[table componentsSeparatedByString:SPUniqueSchemaDelimiter] lastObject], @"display", @"table-small-square", @"image", tablepath, @"path", @"", @"isRef", nil]];
-							break;
-							case 1:
-							[possibleCompletions addObject:[NSDictionary dictionaryWithObjectsAndKeys:[[table componentsSeparatedByString:SPUniqueSchemaDelimiter] lastObject], @"display", @"table-view-small-square", @"image", tablepath, @"path", @"", @"isRef", nil]];
-							break;
-							case 2:
-							[possibleCompletions addObject:[NSDictionary dictionaryWithObjectsAndKeys:[[table componentsSeparatedByString:SPUniqueSchemaDelimiter] lastObject], @"display", @"proc-small", @"image", tablepath, @"path", @"", @"isRef", nil]];
-							breakFlag = YES;
-							break;
-							case 3:
-							[possibleCompletions addObject:[NSDictionary dictionaryWithObjectsAndKeys:[[table componentsSeparatedByString:SPUniqueSchemaDelimiter] lastObject], @"display", @"func-small", @"image", tablepath, @"path", @"", @"isRef", nil]];
-							breakFlag = YES;
-							break;
+							case SPTableTypeTable:
+								[possibleCompletions addObject:[NSDictionary dictionaryWithObjectsAndKeys:[[table componentsSeparatedByString:SPUniqueSchemaDelimiter] lastObject], @"display", @"table-small-square", @"image", tablepath, @"path", @"", @"isRef", nil]];
+								break;
+							case SPTableTypeView:
+								[possibleCompletions addObject:[NSDictionary dictionaryWithObjectsAndKeys:[[table componentsSeparatedByString:SPUniqueSchemaDelimiter] lastObject], @"display", @"table-view-small-square", @"image", tablepath, @"path", @"", @"isRef", nil]];
+								break;
+							case SPTableTypeProc:
+								[possibleCompletions addObject:[NSDictionary dictionaryWithObjectsAndKeys:[[table componentsSeparatedByString:SPUniqueSchemaDelimiter] lastObject], @"display", @"proc-small", @"image", tablepath, @"path", @"", @"isRef", nil]];
+								breakFlag = YES;
+								break;
+							case SPTableTypeFunc:
+								[possibleCompletions addObject:[NSDictionary dictionaryWithObjectsAndKeys:[[table componentsSeparatedByString:SPUniqueSchemaDelimiter] lastObject], @"display", @"func-small", @"image", tablepath, @"path", @"", @"isRef", nil]];
+								breakFlag = YES;
+								break;
 						}
 					if(!breakFlag) {
 						NSArray *sortedFields = [allFields sortedArrayUsingDescriptors:@[desc]];
@@ -911,27 +912,24 @@ retry:
 	if (completionIsOpen) [completionPopup close], completionPopup = nil;
 
 	completionIsOpen = YES;
-	completionPopup = [[SPNarrowDownCompletion alloc] initWithItems:[self suggestionsForSQLCompletionWith:currentWord dictMode:isDictMode browseMode:dbBrowseMode withTableName:tableName withDbName:dbName] 
-					alreadyTyped:filter 
-					staticPrefix:prefix 
-					additionalWordCharacters:allow 
-					caseSensitive:!caseInsensitive
-					charRange:completionRange
-					parseRange:parseRange
-					inView:self
-					dictMode:isDictMode
-					dbMode:dbBrowseMode
-					tabTriggerMode:[self isSnippetMode]
-					fuzzySearch:fuzzySearch
-					backtickMode:backtickMode
-					withDbName:dbName
-					withTableName:tableName
-					selectedDb:currentDb
-					caretMovedLeft:caretMovedLeft
-					autoComplete:autoCompleteMode
-					oneColumn:isDictMode
-					alias:alias
-					withDBStructureRetriever:[tableDocumentInstance databaseStructureRetrieval]];
+	completionPopup = [[SPNarrowDownCompletion alloc] initWithItems:[self suggestionsForSQLCompletionWith:currentWord dictMode:isDictMode browseMode:dbBrowseMode withTableName:tableName withDbName:dbName]
+	                                                   alreadyTyped:filter
+	                                                   staticPrefix:prefix
+	                                       additionalWordCharacters:allow
+	                                                  caseSensitive:!caseInsensitive
+	                                                      charRange:completionRange
+	                                                     parseRange:parseRange
+	                                                         inView:self
+	                                                       dictMode:isDictMode
+	                                                 tabTriggerMode:[self isSnippetMode]
+	                                                    fuzzySearch:fuzzySearch
+	                                                   backtickMode:backtickMode
+	                                                     selectedDb:currentDb
+	                                                 caretMovedLeft:caretMovedLeft
+	                                                   autoComplete:autoCompleteMode
+	                                                      oneColumn:isDictMode
+	                                                          alias:alias
+	                                       withDBStructureRetriever:[tableDocumentInstance databaseStructureRetrieval]];
 
 	completionParseRangeLocation = parseRange.location;
 
@@ -1107,7 +1105,7 @@ retry:
  */
 - (IBAction) showMySQLHelpForCurrentWord:(id)sender
 {
-	[customQueryInstance showHelpForCurrentWord:self];
+	[[tableDocumentInstance helpViewerClient] showHelpForCurrentWord:self];
 }
 #endif
 
@@ -1430,12 +1428,12 @@ retry:
 
 	NSArray *arr = nil;
 	if([kind isEqualToString:@"$SP_ASLIST_ALL_TABLES"]) {
-		NSString *currentDb = nil;
-
-		if (tablesListInstance && [tablesListInstance selectedDatabase])
-			currentDb = [tablesListInstance selectedDatabase];
-
 		// TODO HansJB
+		// NSString *currentDb = nil;
+		//
+		// if (tablesListInstance && [tablesListInstance selectedDatabase])
+		// 	currentDb = [tablesListInstance selectedDatabase];
+		//
 		// NSDictionary *dbs = [NSDictionary dictionaryWithDictionary:[[mySQLConnection getDbStructure] objectForKey:connectionID]];
 		// 
 		// if(currentDb != nil && dbs != nil && [dbs count] && [dbs objectForKey:currentDb]) {
@@ -1445,12 +1443,12 @@ retry:
 		// 	[desc release];
 		// 	for(id table in sortedTables) {
 		// 		NSDictionary * theTable = [[dbs objectForKey:currentDb] objectForKey:table];
-		// 		NSInteger structtype = [[theTable objectForKey:@"  struct_type  "] intValue];
+		// 		SPTableType structtype = (SPTableType)[[theTable objectForKey:@"  struct_type  "] intValue];
 		// 		switch(structtype) {
-		// 			case 0:
+		// 			case SPTableTypeTable:
 		// 			[possibleCompletions addObject:[NSDictionary dictionaryWithObjectsAndKeys:table, @"display", @"table-small-square", @"image", currentDb, @"path", @"", @"isRef", nil]];
 		// 			break;
-		// 			case 1:
+		// 			case SPTableTypeView:
 		// 			[possibleCompletions addObject:[NSDictionary dictionaryWithObjectsAndKeys:table, @"display", @"table-view-small-square", @"image", currentDb, @"path", @"", @"isRef", nil]];
 		// 			break;
 		// 		}
@@ -1540,27 +1538,24 @@ retry:
 
 	if (completionIsOpen) [completionPopup close], completionPopup = nil;
 	completionIsOpen = YES;
-	completionPopup = [[SPNarrowDownCompletion alloc] initWithItems:possibleCompletions 
-					alreadyTyped:@"" 
-					staticPrefix:@"" 
-					additionalWordCharacters:@"_." 
-					caseSensitive:NO
-					charRange:aRange
-					parseRange:aRange
-					inView:self
-					dictMode:NO
-					dbMode:YES
-					tabTriggerMode:[self isSnippetMode]
-					fuzzySearch:fuzzySearchMode
-					backtickMode:NO
-					withDbName:@""
-					withTableName:@""
-					selectedDb:@""
-					caretMovedLeft:NO
-					autoComplete:NO
-					oneColumn:NO
-					alias:nil
-					withDBStructureRetriever:nil];
+	completionPopup = [[SPNarrowDownCompletion alloc] initWithItems:possibleCompletions
+	                                                   alreadyTyped:@""
+	                                                   staticPrefix:@""
+	                                       additionalWordCharacters:@"_."
+	                                                  caseSensitive:NO
+	                                                      charRange:aRange
+	                                                     parseRange:aRange
+	                                                         inView:self
+	                                                       dictMode:NO
+	                                                 tabTriggerMode:[self isSnippetMode]
+	                                                    fuzzySearch:fuzzySearchMode
+	                                                   backtickMode:NO
+	                                                     selectedDb:@""
+	                                                 caretMovedLeft:NO
+	                                                   autoComplete:NO
+	                                                      oneColumn:NO
+	                                                          alias:nil
+	                                       withDBStructureRetriever:nil];
 
 	[self _positionCompletionPopup:completionPopup relativeToTextAtLocation:aRange.location];
 
@@ -1693,27 +1688,24 @@ retry:
 
 							if (completionIsOpen) [completionPopup close], completionPopup = nil;
 							completionIsOpen = YES;
-							completionPopup = [[SPNarrowDownCompletion alloc] initWithItems:possibleCompletions 
-											alreadyTyped:@"" 
-											staticPrefix:@"" 
-											additionalWordCharacters:@"_." 
-											caseSensitive:NO
-											charRange:insertRange
-											parseRange:insertRange
-											inView:self
-											dictMode:NO
-											dbMode:NO
-											tabTriggerMode:[self isSnippetMode]
-											fuzzySearch:fuzzySearchMode
-											backtickMode:NO
-											withDbName:@""
-											withTableName:@""
-											selectedDb:@""
-											caretMovedLeft:NO
-											autoComplete:NO
-											oneColumn:YES
-											alias:nil
-											withDBStructureRetriever:nil];
+							completionPopup = [[SPNarrowDownCompletion alloc] initWithItems:possibleCompletions
+							                                                   alreadyTyped:@""
+							                                                   staticPrefix:@""
+							                                       additionalWordCharacters:@"_."
+							                                                  caseSensitive:NO
+							                                                      charRange:insertRange
+							                                                     parseRange:insertRange
+							                                                         inView:self
+							                                                       dictMode:NO
+							                                                 tabTriggerMode:[self isSnippetMode]
+							                                                    fuzzySearch:fuzzySearchMode
+							                                                   backtickMode:NO
+							                                                     selectedDb:@""
+							                                                 caretMovedLeft:NO
+							                                                   autoComplete:NO
+							                                                      oneColumn:YES
+							                                                          alias:nil
+							                                       withDBStructureRetriever:nil];
 
 							[self _positionCompletionPopup:completionPopup relativeToTextAtLocation:r2.location];
 

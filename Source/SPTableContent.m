@@ -56,7 +56,7 @@
 #import "SPThreadAdditions.h"
 #import "SPTableFilterParser.h"
 #import "SPFunctions.h"
-#import "SPTableContentFilterController.h"
+#import "SPRuleFilterController.h"
 #import "SPFilterTableController.h"
 
 #import <pthread.h>
@@ -68,6 +68,36 @@
  * Do not try to give it to other classes, ESPECIALLY NOT child classes!
  */
 static void *TableContentKVOContext = &TableContentKVOContext;
+
+/**
+ * TODO:
+ * This class is a temporary workaround, because before SPTableContent was both a child class in one xib
+ * and an owner class in another xib, which is bad style and causes other complications.
+ */
+@interface ContentPaginationViewController : NSViewController
+{
+	id target;
+	SEL action;
+
+	NSNumber *page;
+	NSNumber *maxPage;
+
+	IBOutlet NSButton *paginationGoButton;
+	IBOutlet NSTextField *paginationPageField;
+	IBOutlet NSStepper *paginationPageStepper;
+}
+- (IBAction)paginationGoAction:(id)sender;
+- (void)makeInputFirstResponder;
+- (BOOL)isFirstResponderInside;
+
+@property (assign, nonatomic) id target;
+@property (assign, nonatomic) SEL action;
+
+// IB Bindings
+@property (copy, nonatomic) NSNumber *page;
+@property (copy, nonatomic) NSNumber *maxPage;
+
+@end
 
 @interface SPTableContent ()
 
@@ -93,7 +123,6 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 @synthesize addButton;
 @synthesize duplicateButton;
 @synthesize paginationNextButton;
-@synthesize paginationPageField;
 @synthesize paginationPreviousButton;
 @synthesize reloadButton;
 @synthesize removeButton;
@@ -113,9 +142,6 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 		isWorking = NO;
 		
 		pthread_mutex_init(&tableValuesLock, NULL);
-#ifndef SP_CODA
-		nibObjectsToRelease = [[NSMutableArray alloc] init];
-#endif
 
 		tableValues       = [[SPDataStorage alloc] init];
 		dataColumns       = [[NSMutableArray alloc] init];
@@ -127,6 +153,7 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 #ifndef SP_CODA
 		activeFilter               = SPTableContentFilterSourceNone;
 		schemeFilter               = nil;
+		paginationViewController   = [[ContentPaginationViewController alloc] init]; // the view itself is lazily loaded
 		paginationPopover          = nil;
 #endif
 
@@ -160,10 +187,9 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 
 		tableLoadTimer = nil;
 
-		blackColor = [NSColor blackColor];
-		lightGrayColor = [NSColor lightGrayColor];
-		blueColor = [NSColor blueColor];
-		whiteColor = [NSColor whiteColor];
+		textForegroundColor  = [NSColor controlTextColor]; // this color dynamically adapts to the rest of the UI
+		nullHighlightColor   = [NSColor lightGrayColor];
+		binhexHighlightColor = [NSColor blueColor];
 
 		kCellEditorErrorNoMatch = NSLocalizedString(@"Field is not editable. No matching record found.\nReload table, check the encoding, or try to add\na primary key field or more fields\nin the view declaration of '%@' to identify\nfield origin unambiguously.", @"Table Content result editing error - could not identify original row");
 		kCellEditorErrorNoMultiTabDb = NSLocalizedString(@"Field is not editable. Field has no or multiple table or database origin(s).",@"field is not editable due to no table/database");
@@ -189,18 +215,9 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 	// Set the double-click action in blank areas of the table to create new rows
 	[tableContentView setEmptyDoubleClickAction:@selector(addRow:)];
 
-	// Load the pagination view, keeping references to the top-level objects for later release
-	NSArray *paginationViewTopLevelObjects = nil;
-	NSNib *nibLoader = [[NSNib alloc] initWithNibNamed:@"ContentPaginationView" bundle:[NSBundle mainBundle]];
-	
-	if (![nibLoader instantiateNibWithOwner:self topLevelObjects:&paginationViewTopLevelObjects]) {
-		NSLog(@"Content pagination nib could not be loaded; pagination will not function correctly.");
-	} 
-	else {
-		[nibObjectsToRelease addObjectsFromArray:paginationViewTopLevelObjects];
-	}
-	
-	[nibLoader release];
+	[paginationViewController setTarget:self];
+	[paginationViewController setAction:@selector(navigatePaginationFromButton:)];
+	[paginationViewController view]; // make sure the nib is actually loaded
 	
 	//let's see if we can use the NSPopover (10.7+) or have to make do with our legacy clone.
 	//this is using reflection right now, as our SDK is 10.8 but our minimum supported version is 10.6
@@ -222,7 +239,7 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 		paginationViewFrame.origin.y = paginationButtonFrame.origin.y + paginationButtonFrame.size.height - 2;
 		paginationViewFrame.size.height = 0;
 		[paginationView setFrame:paginationViewFrame];
-		[contentViewPane addSubview:paginationView];
+		[[paginationButton superview] addSubview:paginationView];
 	}
 #endif
 
@@ -235,20 +252,20 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 	// Add observer to change view sizes with filter rule editor
 	[[NSNotificationCenter defaultCenter] addObserver:self
 	                                         selector:@selector(filterRuleEditorPreferredSizeChanged:)
-	                                             name:SPTableContentFilterHeightChangedNotification
-	                                           object:filterControllerInstance];
+	                                             name:SPRuleFilterHeightChangedNotification
+	                                           object:ruleFilterController];
 	[contentAreaContainer setPostsFrameChangedNotifications:YES];
 	[[NSNotificationCenter defaultCenter] addObserver:self
 	                                         selector:@selector(contentViewSizeChanged:)
 	                                             name:NSViewFrameDidChangeNotification
 	                                           object:contentAreaContainer];
-	[filterControllerInstance setTarget:self];
-	[filterControllerInstance setAction:@selector(filterTable:)];
+	[ruleFilterController setTarget:self];
+	[ruleFilterController setAction:@selector(filterTable:)];
 	
 	[filterTableController setTarget:self];
 	[filterTableController setAction:@selector(filterTable:)];
 	//TODO This is only needed for 10.6 compatibility
-	scrollViewHasRubberbandScrolling = [[[filterControllerInstance view] enclosingScrollView] respondsToSelector:@selector(setVerticalScrollElasticity:)];
+	scrollViewHasRubberbandScrolling = [[[ruleFilterController view] enclosingScrollView] respondsToSelector:@selector(setVerticalScrollElasticity:)];
 
 	// Add observers for document task activity
 	[[NSNotificationCenter defaultCenter] addObserver:self
@@ -362,7 +379,7 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 	[self setRuleEditorVisible:NO animate:NO];
 	[toggleRuleFilterButton setEnabled:NO];
 	[toggleRuleFilterButton setState:NSOffState];
-	[filterControllerInstance setColumns:nil];
+	[ruleFilterController setColumns:nil];
 
 	// Disable pagination
 	[paginationPreviousButton setEnabled:NO];
@@ -443,7 +460,7 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 		if (newTableName) selectedTable = [[NSString alloc] initWithString:newTableName];
 		previousTableRowsCount = 0;
 		contentPage = 1;
-		[paginationPageField setStringValue:@"1"];
+		[paginationViewController setPage:@1];
 
 		// Clear the selection
 		[tableContentView deselectAll:self];
@@ -634,9 +651,9 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 
 	[filterTableController setColumns:dataColumns];
 	// Enable and initialize filter fields (with tags for position of menu item and field position)
-	[filterControllerInstance setColumns:dataColumns];
+	[ruleFilterController setColumns:dataColumns];
 	// Restore preserved filter settings if appropriate and valid
-	[filterControllerInstance restoreSerializedFilters:filtersToRestore];
+	[ruleFilterController restoreSerializedFilters:filtersToRestore];
 	// hide/show the rule filter editor, based on its previous state (so that it says visible when switching tables, if someone has enabled it and vice versa)
 	if(showFilterRuleEditor) {
 		[self setRuleEditorVisible:YES animate:NO];
@@ -646,7 +663,7 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 		[self setRuleEditorVisible:NO animate:NO];
 		[toggleRuleFilterButton setState:NSOffState];
 	}
-	[filterControllerInstance setEnabled:enableInteraction];
+	[ruleFilterController setEnabled:enableInteraction];
 	[toggleRuleFilterButton setEnabled:enableInteraction];
 	// restore the filter to the previously choosen one for the table
 	activeFilter = activeFilterToRestore;
@@ -950,6 +967,7 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 	[theResultStore startDownload];
 
 #ifndef SP_CODA
+#warning private ivar accessed from outside
 	NSProgressIndicator *dataLoadingIndicator = [tableDocumentInstance valueForKey:@"queryProgressBar"];
 #else
 	NSProgressIndicator *dataLoadingIndicator = [tableDocumentInstance queryProgressBar];
@@ -1013,7 +1031,7 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 		BOOL caseSensitive = (([[NSApp currentEvent] modifierFlags] & NSShiftKeyMask) > 0);
 
 		NSError *err = nil;
-		NSString *filter = [filterControllerInstance sqlWhereExpressionWithBinary:caseSensitive error:&err];
+		NSString *filter = [ruleFilterController sqlWhereExpressionWithBinary:caseSensitive error:&err];
 		if(err) {
 			SPOnewayAlertSheet(
 				NSLocalizedString(@"Invalid Filter", @"table content : apply filter : invalid filter message title"),
@@ -1226,12 +1244,6 @@ static void *TableContentKVOContext = &TableContentKVOContext;
  */
 - (IBAction)filterTable:(id)sender
 {
-	BOOL senderIsPaginationButton = (sender == paginationPreviousButton || sender == paginationNextButton
-#ifndef SP_CODA
-		|| sender == paginationGoButton
-#endif
-		);
-
 	// Record whether the filter is being triggered by using delete/backspace in the filter field, which
 	// can trigger the effect of clicking the "clear filter" button in the field.
 	// (Keycode 51 is backspace, 117 is delete.)
@@ -1255,7 +1267,7 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 	}
 	// If a button other than the pagination buttons was used, set the active filter type to
 	// the standard filter field.
-	else if (sender == filterControllerInstance) {
+	else if (sender == ruleFilterController) {
 		activeFilter = SPTableContentFilterSourceRuleFilter;
 		resetPaging = YES;
 	}
@@ -1283,16 +1295,17 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 
 	// Select the correct pagination value.
 	// If the filter button was used, or if pagination is disabled, reset to page one
-	if (resetPaging || ![prefs boolForKey:SPLimitResults] || [paginationPageField integerValue] <= 0) {
+	NSInteger paginationViewPage = [[paginationViewController page] integerValue];
+	if (resetPaging || ![prefs boolForKey:SPLimitResults] || paginationViewPage <= 0) {
 		contentPage = 1;
 	}
 	// If the current page is out of bounds, move it within bounds
-	else if (([paginationPageField integerValue] - 1) * [prefs integerForKey:SPLimitResultsValue] >= maxNumRows) {
+	else if ((paginationViewPage - 1) * [prefs integerForKey:SPLimitResultsValue] >= maxNumRows) {
 		contentPage = ceilf((CGFloat) maxNumRows / [prefs floatForKey:SPLimitResultsValue]);
 	}
 	// Otherwise, use the pagination value
 	else {
-		contentPage = [paginationPageField integerValue];
+		contentPage = paginationViewPage;
 	}
 
 	if ([self tableFilterString]) {
@@ -1328,7 +1341,7 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 		previousTableRowsCount = 0;
 		[self clearTableValues];
 		[self loadTableValues];
-		[[tableContentView onMainThread] scrollPoint:NSMakePoint(0.0f, 0.0f)];
+		[[tableContentView onMainThread] scrollRowToVisible:0];
 
 		[tableDocumentInstance endTask];
 	}
@@ -1348,12 +1361,12 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 {
 	// we can't change the state of the button here, because the mouse click already changed it
 	if(show) {
-		if([filterControllerInstance isEmpty]) {
-			[filterControllerInstance addFilterExpression];
+		if([ruleFilterController isEmpty]) {
+			[ruleFilterController addFilterExpression];
 			// the sizing will be updated automatically by adding a row
 		}
 		else {
-			[self updateFilterRuleEditorSize:[filterControllerInstance preferredHeight] animate:animate];
+			[self updateFilterRuleEditorSize:[ruleFilterController preferredHeight] animate:animate];
 		}
 	}
 	else {
@@ -1465,10 +1478,10 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 
 	if (sender == paginationPreviousButton) {
 		if (contentPage <= 1) return;
-		[paginationPageField setIntegerValue:(contentPage - 1)];
+		[paginationViewController setPage:@(contentPage - 1)];
 	} else if (sender == paginationNextButton) {
 		if ((NSInteger)contentPage * [prefs integerForKey:SPLimitResultsValue] >= maxNumRows) return;
-		[paginationPageField setIntegerValue:(contentPage + 1)];
+		[paginationViewController setPage:@(contentPage + 1)];
 	}
 
 	[self filterTable:sender];
@@ -1502,18 +1515,17 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 	if(makeVisible) {
 		[paginationButton setState:NSOnState];
 		[paginationButton setImage:[NSImage imageNamed:@"button_action"]];
-		[[paginationPageField window] makeFirstResponder:paginationPageField];
+		[paginationViewController makeInputFirstResponder];
 	}
 	else {
 		[paginationButton setState:NSOffState];
 		[paginationButton setImage:[NSImage imageNamed:@"button_pagination"]];
-		if ([[paginationPageField window] firstResponder] == paginationPageField
-			|| ([[[paginationPageField window] firstResponder] respondsToSelector:@selector(superview)]
-				&& [(id)[[paginationPageField window] firstResponder] superview]
-				&& [[(id)[[paginationPageField window] firstResponder] superview] respondsToSelector:@selector(superview)]
-				&& [[(id)[[paginationPageField window] firstResponder] superview] superview] == paginationPageField))
-		{
-			[[paginationPageField window] makeFirstResponder:nil];
+		// TODO This is only relevant in 10.6 legacy mode.
+		// When using a modern NSPopover, the view controller's parent window is an _NSPopoverWindow,
+		// not the SP window and we don't care what the first responder in the popover is.
+		// (when it is not being displayed anyway).
+		if (!paginationPopover && [paginationViewController isFirstResponderInside]) {
+			[[[paginationViewController view] window] makeFirstResponder:nil];
 		}
 	}
 	
@@ -1553,33 +1565,24 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 	}
 	BOOL enabledMode = ![tableDocumentInstance isWorking];
 
-	NSNumberFormatter *numberFormatter = [[[NSNumberFormatter alloc] init] autorelease];
-	[numberFormatter setNumberStyle:NSNumberFormatterDecimalStyle];
-
+	BOOL limitResults = [prefs boolForKey:SPLimitResults];
 	// Set up the previous page button
-	if ([prefs boolForKey:SPLimitResults] && contentPage > 1)
-		[paginationPreviousButton setEnabled:enabledMode];
-	else
-		[paginationPreviousButton setEnabled:NO];
+	[paginationPreviousButton setEnabled:(limitResults && contentPage > 1 ? enabledMode : NO)];
 
 	// Set up the next page button
-	if ([prefs boolForKey:SPLimitResults] && contentPage < maxPage)
-		[paginationNextButton setEnabled:enabledMode];
-	else
-		[paginationNextButton setEnabled:NO];
+	[paginationNextButton setEnabled:(limitResults && contentPage < maxPage ? enabledMode : NO)];
 
 #ifndef SP_CODA
 	// As long as a table is selected (which it will be if this is called), enable pagination detail button
 	[paginationButton setEnabled:enabledMode];
 #endif
 
+	// "1" is the minimum page, so maxPage must not be less (which it would be for empty tables)
+	if(maxPage < 1) maxPage = 1;
+
 	// Set the values and maximums for the text field and associated pager
-	[paginationPageField setStringValue:[numberFormatter stringFromNumber:[NSNumber numberWithUnsignedInteger:contentPage]]];
-	[[paginationPageField formatter] setMaximum:[NSNumber numberWithUnsignedInteger:maxPage]];
-#ifndef SP_CODA
-	[paginationPageStepper setIntegerValue:contentPage];
-	[paginationPageStepper setMaxValue:maxPage];
-#endif
+	[paginationViewController setPage:@(contentPage)];
+	[paginationViewController setMaxPage:@(maxPage)];
 }
 
 #pragma mark -
@@ -1808,10 +1811,10 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 	if (![tableContentView numberOfSelectedRows]) return;
 
 	NSAlert *alert = [NSAlert alertWithMessageText:@""
-									 defaultButton:NSLocalizedString(@"Delete", @"delete button")
-								   alternateButton:NSLocalizedString(@"Cancel", @"cancel button")
-									   otherButton:nil
-						 informativeTextWithFormat:@""];
+	                                 defaultButton:NSLocalizedString(@"Delete", @"delete button")
+	                               alternateButton:NSLocalizedString(@"Cancel", @"cancel button")
+	                                   otherButton:nil
+	                     informativeTextWithFormat:@""];
 
 	[alert setAlertStyle:NSCriticalAlertStyle];
 
@@ -1868,7 +1871,7 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 /**
  * Perform the requested row deletion action.
  */
-- (void)removeRowSheetDidEnd:(NSAlert *)alert returnCode:(NSInteger)returnCode contextInfo:(NSString *)contextInfo
+- (void)removeRowSheetDidEnd:(NSAlert *)alert returnCode:(NSInteger)returnCode contextInfo:(void *)contextInfo
 {
 	NSMutableIndexSet *selectedRows = [NSMutableIndexSet indexSet];
 	NSString *wherePart;
@@ -2387,14 +2390,14 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 		else if(navigateAsHex) filterComparison = @"= (Hex String)";
 
 		// Store the filter details to use when loading the target table
-		NSDictionary *filterSettings = [SPTableContentFilterController makeSerializedFilterForColumn:[refDictionary objectForKey:@"column"]
-		                                                                                    operator:filterComparison
-		                                                                                      values:@[targetFilterValue]];
+		NSDictionary *filterSettings = [SPRuleFilterController makeSerializedFilterForColumn:[refDictionary objectForKey:@"column"]
+		                                                                            operator:filterComparison
+		                                                                              values:@[targetFilterValue]];
 
 		// If the link is within the current table, apply filter settings manually
 		if ([[refDictionary objectForKey:@"table"] isEqualToString:selectedTable]) {
 			SPMainQSync(^{
-				[filterControllerInstance restoreSerializedFilters:filterSettings];
+				[ruleFilterController restoreSerializedFilters:filterSettings];
 				[self setRuleEditorVisible:YES animate:YES];
 				activeFilter = SPTableContentFilterSourceRuleFilter;
 			});
@@ -3325,7 +3328,8 @@ static void *TableContentKVOContext = &TableContentKVOContext;
  */
 - (CGFloat) tablesListWidth
 {
-	return [[[[tableDocumentInstance valueForKeyPath:@"contentViewSplitter"] subviews] objectAtIndex:0] frame].size.width;
+#warning private ivar accessed from outside
+	return [[[[tableDocumentInstance valueForKey:@"contentViewSplitter"] subviews] objectAtIndex:0] frame].size.width;
 }
 
 /**
@@ -3335,7 +3339,7 @@ static void *TableContentKVOContext = &TableContentKVOContext;
  */
 - (NSDictionary *) filterSettings
 {
-	return [filterControllerInstance serializedFilter];
+	return [ruleFilterController serializedFilter];
 }
 
 /**
@@ -3443,7 +3447,7 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 	NSRect contentAreaRect = [contentAreaContainer frame];
 	CGFloat availableHeight = contentAreaRect.size.height;
 
-	NSRect ruleEditorRect = [[[filterControllerInstance view] enclosingScrollView] frame];
+	NSRect ruleEditorRect = [[[ruleFilterController view] enclosingScrollView] frame];
 
 	//adjust for the UI elements below the rule editor, but only if the view height should not be 0 (ie. hidden)
 	CGFloat containerRequestedHeight =  requestedHeight ? requestedHeight + ruleEditorRect.origin.y : 0;
@@ -3470,18 +3474,18 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 		[NSAnimationContext beginGrouping];
 		[[tableContentContainer animator] setFrame:bottomContainerRect];
 		[[filterRuleEditorContainer animator] setFrame:topContainerRect];
-		[[[[filterControllerInstance view] enclosingScrollView] animator] setFrame:ruleEditorRect];
+		[[[[ruleFilterController view] enclosingScrollView] animator] setFrame:ruleEditorRect];
 		[NSAnimationContext endGrouping];
 	}
 	else {
 		[tableContentContainer setFrameSize:bottomContainerRect.size];
 		[filterRuleEditorContainer setFrame:topContainerRect];
-		[[[filterControllerInstance view] enclosingScrollView] setFrame:ruleEditorRect];
+		[[[ruleFilterController view] enclosingScrollView] setFrame:ruleEditorRect];
 	}
 
 	//disable rubberband scrolling as long as there is nothing to scroll
 	if(scrollViewHasRubberbandScrolling) {
-		NSScrollView *filterControllerScroller = [[filterControllerInstance view] enclosingScrollView];
+		NSScrollView *filterControllerScroller = [[ruleFilterController view] enclosingScrollView];
 		if (ruleEditorRect.size.height >= requestedHeight) {
 			[filterControllerScroller setVerticalScrollElasticity:NSScrollElasticityNone];
 		} else {
@@ -3493,14 +3497,14 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 - (void)filterRuleEditorPreferredSizeChanged:(NSNotification *)notification
 {
 	if(showFilterRuleEditor) {
-		[self updateFilterRuleEditorSize:[filterControllerInstance preferredHeight] animate:YES];
+		[self updateFilterRuleEditorSize:[ruleFilterController preferredHeight] animate:YES];
 	}
 }
 
 - (void)contentViewSizeChanged:(NSNotification *)notification
 {
 	if(showFilterRuleEditor) {
-		[self updateFilterRuleEditorSize:[filterControllerInstance preferredHeight] animate:NO];
+		[self updateFilterRuleEditorSize:[ruleFilterController preferredHeight] animate:NO];
 	}
 }
 
@@ -3524,6 +3528,7 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 		[tableDataInstance setStatusValue:@"y" forKey:@"RowsCountAccurate"];
 #ifndef SP_CODA
 		[[tableInfoInstance onMainThread] tableChanged:nil];
+#warning private ivar accessed from outside
 		[[[tableDocumentInstance valueForKey:@"extendedTableInfoInstance"] onMainThread] loadTable:selectedTable];
 #endif
 
@@ -3624,7 +3629,7 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 	[removeButton setEnabled:NO];
 	[duplicateButton setEnabled:NO];
 	[reloadButton setEnabled:NO];
-	[filterControllerInstance setEnabled:NO];
+	[ruleFilterController setEnabled:NO];
 	[toggleRuleFilterButton setEnabled:NO];
 	tableRowsSelectable = NO;
 	[paginationPreviousButton setEnabled:NO];
@@ -3660,7 +3665,7 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 		}
 	}
 
-	[filterControllerInstance setEnabled:(!![selectedTable length])];
+	[ruleFilterController setEnabled:(!![selectedTable length])];
 	[toggleRuleFilterButton setEnabled:(!![selectedTable length])];
 	tableRowsSelectable = YES;
 }
@@ -3928,7 +3933,7 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 {
 	[self setRuleEditorVisible:YES animate:YES];
 	[toggleRuleFilterButton setState:NSOnState];
-	[filterControllerInstance focusFirstInputField];
+	[ruleFilterController focusFirstInputField];
 }
 
 #endif
@@ -4331,7 +4336,7 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 		if ([tableView editedColumn] != -1
 			&& [tableView editedRow] == rowIndex
 			&& (NSUInteger)[[NSArrayObjectAtIndex([tableView tableColumns], [tableView editedColumn]) identifier] integerValue] == columnIndex) {
-			[cell setTextColor:blackColor];
+			[cell setTextColor:textForegroundColor];
 			if (cellIsLinkCell) [cell setLinkActive:NO];
 			return;
 		}
@@ -4353,13 +4358,16 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 		}
 
 		if (cellIsNullOrUnloaded) {
-			[cell setTextColor:rowIndex == [tableContentView selectedRow] ? whiteColor : lightGrayColor];
+			[cell setTextColor:(rowIndex == [tableContentView selectedRow] ? textForegroundColor : nullHighlightColor)];
 		}
 		else {
-			[cell setTextColor:blackColor];
+			[cell setTextColor:textForegroundColor];
 
-			if ([self cellValueIsDisplayedAsHexForColumn:[[tableColumn identifier] integerValue]]) {
-				[cell setTextColor:rowIndex == [tableContentView selectedRow] ? whiteColor : blueColor];
+			if (
+				[self cellValueIsDisplayedAsHexForColumn:[[tableColumn identifier] integerValue]] &&
+				rowIndex != [tableContentView selectedRow]
+			) {
+				[cell setTextColor:binhexHighlightColor];
 			}
 		}
 
@@ -4634,9 +4642,8 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 	SPClear(dataColumns);
 	SPClear(oldRow);
 #ifndef SP_CODA
-	for (id retainedObject in nibObjectsToRelease) [retainedObject release];
-	SPClear(nibObjectsToRelease);
 	SPClear(paginationPopover);
+	SPClear(paginationViewController);
 
 #endif
 	if (selectedTable)          SPClear(selectedTable);
@@ -4649,6 +4656,52 @@ static void *TableContentKVOContext = &TableContentKVOContext;
 
 	SPClear(filtersToRestore);
 
+	[super dealloc];
+}
+
+@end
+
+#pragma mark -
+
+@implementation ContentPaginationViewController
+
+@synthesize page = page;
+@synthesize maxPage = maxPage;
+@synthesize target = target;
+@synthesize action = action;
+
+- (instancetype)init
+{
+	if((self = [super initWithNibName:@"ContentPaginationView" bundle:nil])) {
+		[self setPage:@1];
+		[self setMaxPage:@1];
+	}
+	return self;
+}
+
+- (IBAction)paginationGoAction:(id)sender
+{
+	if(target && action) [target performSelector:action withObject:self];
+}
+
+- (void)makeInputFirstResponder
+{
+	[[paginationPageField window] makeFirstResponder:paginationPageField];
+}
+
+- (BOOL)isFirstResponderInside
+{
+	NSResponder *firstResponder = [[paginationPageField window] firstResponder];
+	return (
+		[firstResponder isKindOfClass:[NSView class]] &&
+		[(NSView *)firstResponder isDescendantOf:[self view]]
+	);
+}
+
+- (void)dealloc
+{
+	[self setPage:nil];
+	[self setMaxPage:nil];
 	[super dealloc];
 }
 

@@ -1,9 +1,9 @@
 //
-//  PGPostgresConnectionParameters.h
-//  PostgresKit
+//  SPButtonBar.h
+//  sequel-pro
 //
-//  Created by Stuart Connolly (stuconnolly.com) on August 29, 2012.
-//  Copyright (c) 2012 Stuart Connolly. All rights reserved.
+//  Created by Max Lohrmann on 16.07.18.
+//  Copyright (c) 2018 Max Lohrmann. All rights reserved.
 //
 //  Permission is hereby granted, free of charge, to any person
 //  obtaining a copy of this software and associated documentation
@@ -25,30 +25,24 @@
 //  WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 //  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 //  OTHER DEALINGS IN THE SOFTWARE.
-
-#import <pthread.h>
-
-@class PGPostgresConnection;
-
-@interface PGPostgresConnectionParameters : NSObject 
-{
-	PGPostgresConnection *_connection;
-	
-	NSMutableArray *_parameterNames;
-	NSMutableDictionary *_parameters;
-	
-	pthread_mutex_t _readLock;
-}
+//
+//  More info at <https://github.com/sequelpro/sequelpro>
 
 /**
- * @property connection The database connection to use.
+ * This view can be used as the background for button bars displayed at the bottom of the window
+ * in various places.
+ * On 10.14+ it will automatically adapt to the Dark UI mode.
+ *
+ * Since Apple's complete "documentation" of Dark mode resources consists of "Just use Asset
+ * Catalogs. Oh btw, that'll only work in Xcode 10 and OS X 10.14.", I guess this will be the
+ * alternative to using file formats that are ten times more volatile than the Mac hardware lineup.
  */
-@property (readwrite, assign) PGPostgresConnection *connection;
+@interface SPButtonBar : NSView
+{
+	NSImage *lightImage;
+	NSImage *darkImage;
+}
 
-- (id)initWithConnection:(PGPostgresConnection *)connection;
-
-- (BOOL)loadParameters;
-
-- (id)valueForParameter:(NSString *)parameter;
+- (instancetype)init NS_UNAVAILABLE;
 
 @end

@@ -43,8 +43,10 @@
 @class SPDatabaseDocument;
 @class SPTablesList;
 @class SPTableStructure;
-@class SPTableContentFilterController;
+@class SPRuleFilterController;
 @class SPFilterTableController;
+
+@class ContentPaginationViewController; //private
 
 typedef NS_ENUM(NSInteger, SPTableContentFilterSource) {
 	SPTableContentFilterSourceNone = -1,
@@ -58,9 +60,9 @@ typedef NS_ENUM(NSInteger, SPTableContentFilterSource) {
 @interface SPTableContent : NSObject <NSTableViewDelegate, NSTableViewDataSource, NSComboBoxDataSource, NSComboBoxDelegate, SPDatabaseContentViewDelegate>
 {	
 	IBOutlet SPDatabaseDocument *tableDocumentInstance;
-	IBOutlet id tablesListInstance;
+	IBOutlet SPTablesList *tablesListInstance;
 	IBOutlet SPTableData* tableDataInstance;
-	IBOutlet id tableSourceInstance;
+	IBOutlet SPTableStructure *tableSourceInstance;
 
 #ifndef SP_CODA
 	IBOutlet SPTableInfo *tableInfoInstance;
@@ -70,36 +72,28 @@ typedef NS_ENUM(NSInteger, SPTableContentFilterSource) {
 	IBOutlet SPCopyTable *tableContentView;
 
 	IBOutlet NSButton *toggleRuleFilterButton;
-	IBOutlet id addButton;
-	IBOutlet id duplicateButton;
-	IBOutlet id removeButton;
-	IBOutlet id reloadButton;
+	IBOutlet NSButton *addButton;
+	IBOutlet NSButton *duplicateButton;
+	IBOutlet NSButton *removeButton;
+	IBOutlet NSButton *reloadButton;
 #ifndef SP_CODA
 	IBOutlet NSButton *multipleLineEditingButton;
 	IBOutlet NSTextField *countText;
-	IBOutlet id limitRowsField;
-	IBOutlet id limitRowsButton;
-	IBOutlet id limitRowsStepper;
 #endif
 
 	IBOutlet NSButton *paginationPreviousButton;
 #ifndef SP_CODA
 	IBOutlet NSButton *paginationButton;
-	IBOutlet NSButton *paginationGoButton;
 #endif
 	IBOutlet NSButton *paginationNextButton;
 #ifndef SP_CODA
 	IBOutlet NSView *contentViewPane;
-	IBOutlet NSViewController *paginationViewController;
+	ContentPaginationViewController *paginationViewController;
+	NSPopover *paginationPopover;
 	IBOutlet NSView *paginationView;
 	IBOutlet NSBox *paginationBox;
-	NSPopover *paginationPopover;
-#endif
-	IBOutlet NSTextField *paginationPageField;
-#ifndef SP_CODA
-	IBOutlet NSStepper *paginationPageStepper;
 
-	IBOutlet SPTableContentFilterController *filterControllerInstance;
+	IBOutlet SPRuleFilterController *ruleFilterController;
 	IBOutlet SPFilterTableController *filterTableController;
 	BOOL scrollViewHasRubberbandScrolling;
 #endif
@@ -108,19 +102,28 @@ typedef NS_ENUM(NSInteger, SPTableContentFilterSource) {
 	BOOL _mainNibLoaded;
 	BOOL isWorking;
 	pthread_mutex_t tableValuesLock;
-#ifndef SP_CODA
-	NSMutableArray *nibObjectsToRelease;
-#endif
 
-	NSString *selectedTable, *usedQuery;
+	NSString *selectedTable;
+	NSString *usedQuery;
 	SPDataStorage *tableValues;
-	NSMutableArray *dataColumns, *keys, *oldRow;
-	NSUInteger tableRowsCount, previousTableRowsCount;
+	NSMutableArray *dataColumns;
+	NSMutableArray *keys;
+	NSMutableArray *oldRow;
+	NSUInteger tableRowsCount;
+	NSUInteger previousTableRowsCount;
 	NSNumber *sortCol;
-	BOOL isEditingRow, isEditingNewRow, isSavingRow, isDesc, setLimit;
-	BOOL isFiltered, isLimited, isInterruptedLoad, maxNumRowsIsEstimate;
+	BOOL isEditingRow;
+	BOOL isEditingNewRow;
+	BOOL isSavingRow;
+	BOOL isDesc;
+	BOOL setLimit;
+	BOOL isFiltered;
+	BOOL isLimited;
+	BOOL isInterruptedLoad;
+	BOOL maxNumRowsIsEstimate;
 	NSUserDefaults *prefs;
-	NSInteger currentlyEditingRow, maxNumRows;
+	NSInteger currentlyEditingRow;
+	NSInteger maxNumRows;
 
 	NSUInteger contentPage;
 
@@ -142,7 +145,10 @@ typedef NS_ENUM(NSInteger, SPTableContentFilterSource) {
 #endif
 
 	NSTimer *tableLoadTimer;
-	NSUInteger tableLoadInterfaceUpdateInterval, tableLoadTimerTicksSinceLastUpdate, tableLoadLastRowCount, tableLoadTargetRowCount;
+	NSUInteger tableLoadInterfaceUpdateInterval;
+	NSUInteger tableLoadTimerTicksSinceLastUpdate;
+	NSUInteger tableLoadLastRowCount;
+	NSUInteger tableLoadTargetRowCount;
 
 	NSArray *cqColumnDefinition;
 	BOOL isFirstChangeInView;
@@ -151,10 +157,9 @@ typedef NS_ENUM(NSInteger, SPTableContentFilterSource) {
 	NSString *kCellEditorErrorNoMultiTabDb;
 	NSString *kCellEditorErrorTooManyMatches;
 
-	NSColor *blackColor;
-	NSColor *lightGrayColor;
-	NSColor *blueColor;
-	NSColor *whiteColor;
+	NSColor *textForegroundColor;
+	NSColor *nullHighlightColor;
+	NSColor *binhexHighlightColor;
 
 	SPFieldEditorController *fieldEditor;
 
@@ -176,7 +181,6 @@ typedef NS_ENUM(NSInteger, SPTableContentFilterSource) {
 @property (assign) NSButton* reloadButton;
 @property (assign) NSButton* paginationNextButton;
 @property (assign) NSButton* paginationPreviousButton;
-@property (assign) NSTextField* paginationPageField;
 @property (assign) SPDatabaseDocument* tableDocumentInstance;
 @property (assign) SPTablesList* tablesListInstance;
 @property (assign) SPCopyTable* tableContentView;
@@ -219,7 +223,7 @@ typedef NS_ENUM(NSInteger, SPTableContentFilterSource) {
 - (IBAction)addRow:(id)sender;
 - (IBAction)duplicateRow:(id)sender;
 - (IBAction)removeRow:(id)sender;
-- (void)removeRowSheetDidEnd:(NSAlert *)alert returnCode:(NSInteger)returnCode contextInfo:(NSString *)contextInfo;
+- (void)removeRowSheetDidEnd:(NSAlert *)alert returnCode:(NSInteger)returnCode contextInfo:(void *)contextInfo;
 
 // Filter Table
 - (IBAction)showFilterTable:(id)sender;
