@@ -139,7 +139,11 @@ static int64_t SPDatabaseDocumentInstanceCounter = 0;
 @synthesize databaseStructureRetrieval;
 @synthesize processID;
 @synthesize instanceId;
-@synthesize dbTablesTableView = dbTablesTableView;
+@synthesize dbTablesTableView;
+@synthesize tableDumpInstance;
+@synthesize tablesListInstance;
+@synthesize tableContentInstance;
+@synthesize customQueryInstance;
 
 #pragma mark -
 
@@ -1541,7 +1545,7 @@ static int64_t SPDatabaseDocumentInstanceCounter = 0;
 /**
  * Disable task cancellation.  Called automatically at the end of a task.
  */
-- (void) disableTaskCancellation
+- (void)disableTaskCancellation
 {
 #ifndef SP_CODA 
 	// Ensure call on the main thread
@@ -1560,7 +1564,7 @@ static int64_t SPDatabaseDocumentInstanceCounter = 0;
 /**
  * Action sent by the cancel button when it's active.
  */
-- (IBAction) cancelTask:(id)sender
+- (IBAction)cancelTask:(id)sender
 {
 #ifndef SP_CODA 
 	if (!taskCanBeCancelled) return;
@@ -1586,7 +1590,7 @@ static int64_t SPDatabaseDocumentInstanceCounter = 0;
  * Returns whether the document is busy performing a task - allows UI or actions
  * to be restricted as appropriate.
  */
-- (BOOL) isWorking
+- (BOOL)isWorking
 {
 	return (_isWorkingLevel > 0);
 }
@@ -1594,7 +1598,7 @@ static int64_t SPDatabaseDocumentInstanceCounter = 0;
 /**
  * Set whether the database list is selectable or not during the task process.
  */
-- (void) setDatabaseListIsSelectable:(BOOL)isSelectable
+- (void)setDatabaseListIsSelectable:(BOOL)isSelectable
 {
 	databaseListIsSelectable = isSelectable;
 }
@@ -1602,7 +1606,7 @@ static int64_t SPDatabaseDocumentInstanceCounter = 0;
 /**
  * Reposition the task window within the main window.
  */
-- (void) centerTaskWindow
+- (void)centerTaskWindow
 {
 #ifndef SP_CODA 
 	NSPoint newBottomLeftPoint;
@@ -1620,7 +1624,7 @@ static int64_t SPDatabaseDocumentInstanceCounter = 0;
  * Support pausing and restarting the task progress indicator.
  * Only works while the indicator is in indeterminate mode.
  */
-- (void) setTaskIndicatorShouldAnimate:(BOOL)shouldAnimate
+- (void)setTaskIndicatorShouldAnimate:(BOOL)shouldAnimate
 {
 #ifndef SP_CODA 
 	if (shouldAnimate) {
@@ -2827,11 +2831,6 @@ static int64_t SPDatabaseDocumentInstanceCounter = 0;
 	return [tablesListInstance allTableNames];
 }
 
-- (SPTablesList *)tablesListInstance
-{
-	return tablesListInstance;
-}
-
 - (SPCreateDatabaseInfo *)createDatabaseInfo
 {
 	SPCreateDatabaseInfo *dbInfo = [[SPCreateDatabaseInfo alloc] init];
@@ -3599,13 +3598,13 @@ static int64_t SPDatabaseDocumentInstanceCounter = 0;
 
 /**
  * Menu item validation.
- */
+	*/
 - (BOOL)validateMenuItem:(NSMenuItem *)menuItem
 {
 	SEL action = [menuItem action];
 	
-	if ([menuItem menu] == chooseDatabaseButton) {
-		return (_isConnected && databaseListIsSelectable);
+	if (action == @selector(chooseDatabase:)) {
+		return _isConnected && databaseListIsSelectable;
 	}
 
 	if (!_isConnected || _isWorkingLevel) {
@@ -3616,7 +3615,6 @@ static int64_t SPDatabaseDocumentInstanceCounter = 0;
 		);
 	}
 
-#ifndef SP_CODA
 	if (action == @selector(openCurrentConnectionInNewWindow:))
 	{
 		if ([self isUntitled]) {
@@ -3628,7 +3626,6 @@ static int64_t SPDatabaseDocumentInstanceCounter = 0;
 			return YES;
 		}
 	}
-#endif
 	
 	// Data export
 	if (action == @selector(export:)) {
@@ -3709,7 +3706,6 @@ static int64_t SPDatabaseDocumentInstanceCounter = 0;
 		return YES;
 	}
 
-#ifndef SP_CODA
 	if (action == @selector(printDocument:)) {
 		return (
 			([self database] != nil && [[tablesListInstance valueForKeyPath:@"tablesListView"] numberOfSelectedRows] == 1) ||
@@ -3719,7 +3715,6 @@ static int64_t SPDatabaseDocumentInstanceCounter = 0;
 			[self currentlySelectedView] == SPTableViewCustomQuery
 		);
 	}
-#endif
 
 	if (action == @selector(chooseEncoding:)) {
 		return [self supportsEncoding];
@@ -3738,7 +3733,6 @@ static int64_t SPDatabaseDocumentInstanceCounter = 0;
 		return [[[tablesListInstance valueForKeyPath:@"tablesListView"] selectedRowIndexes] count];
 	}
 
-#ifndef SP_CODA
 	if (action == @selector(addConnectionToFavorites:)) {
 		return ![connectionController selectedFavorite] || [connectionController isEditingConnection];
 	}
@@ -3752,7 +3746,6 @@ static int64_t SPDatabaseDocumentInstanceCounter = 0;
 	if ((action == @selector(backForwardInHistory:)) && ([menuItem tag] == 1)) {
 		return (([[spHistoryControllerInstance history] count]) && (([spHistoryControllerInstance historyPosition] + 1) < [[spHistoryControllerInstance history] count]));
 	}
-#endif
 	
 	// Show/hide console
 	if (action == @selector(toggleConsole:)) {
@@ -5861,7 +5854,9 @@ static int64_t SPDatabaseDocumentInstanceCounter = 0;
 	}
 
 	// Otherwise position the sheet beneath the tab bar if it's visible
+#warning Private ivar accessed from outside (#2978)
 	rect.origin.y -= [[parentWindowController valueForKey:@"tabBar"] frame].size.height - 1;
+
 	return rect;
 }
 #endif

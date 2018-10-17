@@ -239,6 +239,7 @@
 	[newWindow setTitle:[[[[tabView selectedTabViewItem] identifier] parentWindow] title]];
 
 	// New window's tabBar control
+#warning Private ivar accessed from outside (#2978)
 	PSMTabBarControl *control = [newWindowController valueForKey:@"tabBar"];
 
 	// Add the selected tab to the new window
@@ -849,6 +850,7 @@
 	[newWindow setTitle:[[[tabViewItem identifier] parentWindow] title]];
 
 	// Return the window's tab bar
+#warning Private ivar accessed from outside (#2978)
 	return [newWindowController valueForKey:@"tabBar"];
 }
 
@@ -856,7 +858,7 @@
  * When dragging a tab off the tab bar, return an image so that a
  * drag placeholder can be displayed.
  */
-- (NSImage *)tabView:(NSTabView *)aTabView imageForTabViewItem:(NSTabViewItem *)tabViewItem offset:(NSSize *)offset styleMask:(unsigned int *)styleMask
+- (NSImage *)tabView:(NSTabView *)aTabView imageForTabViewItem:(NSTabViewItem *)tabViewItem offset:(NSSize *)offset styleMask:(NSUInteger *)styleMask
 {
 	NSImage *viewImage = [[NSImage alloc] init];
 
